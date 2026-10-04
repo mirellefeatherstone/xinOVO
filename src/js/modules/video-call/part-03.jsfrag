@@ -44,11 +44,8 @@
         
         document.getElementById('vc-status-main').style.color = "rgba(255,255,255,0.9)";
 
-        if (this.state.currentCallContext.length > 0) {
-            const startTimeDate = new Date(this.state.startTime);
-            const dateStr = `${startTimeDate.getFullYear()}/${startTimeDate.getMonth()+1}/${startTimeDate.getDate()} ${startTimeDate.getHours().toString().padStart(2,'0')}:${startTimeDate.getMinutes().toString().padStart(2,'0')}`;
-            const durationStr = this.formatDuration(this.state.seconds);
-
+        if (wasConnected && this.state.currentChat) {
+            const completedChat = this.state.currentChat;
             const callRecord = {
                 id: Date.now().toString() + Math.random().toString(36).substr(2, 5),
                 startTime: this.state.startTime,
@@ -58,36 +55,24 @@
                 summary: ""
             };
 
-            if (!this.state.currentChat.callHistory) {
-                this.state.currentChat.callHistory = [];
+            if (!completedChat.callHistory) {
+                completedChat.callHistory = [];
             }
-            this.state.currentChat.callHistory.push(callRecord);
-            
-            const summaryMsg = {
-                id: `msg_${Date.now()}_${Math.random()}`,
-                role: 'assistant',
-                content: `[视频通话记录：${dateStr}；${durationStr}；]`, 
-                timestamp: Date.now(),
+            completedChat.callHistory.push(callRecord);
+            await this.updateCallMessage(completedChat, this.state.callMessageId, {
+                callStatus: 'ended',
+                callDuration: this.state.seconds,
                 callRecordId: callRecord.id
-            };
-            this.state.currentChat.history.push(summaryMsg);
+            });
 
-            await saveData();
-            showToast('通话结束，正在生成总结...');
-            
-            if (typeof renderMessages === 'function' && currentChatId === this.state.currentChat.id) {
-                renderMessages(false, true);
-            }
-
-            if (typeof generateCallSummary === 'function') {
-                generateCallSummary(this.state.currentChat, this.state.currentCallContext).then(async (summary) => {
+            if (this.state.currentCallContext.length > 0 && typeof generateCallSummary === 'function') {
+                showToast('通话结束，正在生成总结...');
+                generateCallSummary(completedChat, this.state.currentCallContext).then(async (summary) => {
                     if (summary) {
                         callRecord.summary = summary;
-                        summaryMsg.content = `[视频通话记录：${dateStr}；${durationStr}；${summary}]`;
-                        
+                        this.ensureCallSummaryMessages(completedChat);
                         await saveData();
-                        
-                        if (typeof renderMessages === 'function' && currentChatId === this.state.currentChat.id) {
+                        if (typeof renderMessages === 'function' && currentChatId === completedChat.id) {
                             renderMessages(false, false);
                         }
                         showToast('通话总结已生成');
@@ -96,10 +81,29 @@
                     }
                 });
             }
+        } else if (this.state.currentChat && this.state.callMessageId) {
+            await this.updateCallMessage(this.state.currentChat, this.state.callMessageId, {
+                callStatus: 'cancelled'
+            });
         }
+        this.state.callMessageId = null;
     },
 
     // --- 历史记录相关 (重构版 - iOS 风格 + 长按删除) ---
+
+    showDetailModal: function(recordId) {
+        const chat = currentChatType === 'group'
+            ? db.groups.find(group => group.id === currentChatId)
+            : db.characters.find(character => character.id === currentChatId);
+        if (!chat?.callHistory?.some(record => record.id === recordId)) return;
+        this.showHistoryModal();
+        const item = Array.from(document.querySelectorAll('#vc-history-list .vc-history-item-container'))
+            .find(element => element.dataset.callRecordId === String(recordId));
+        if (item) {
+            item.querySelector('.vc-history-header')?.click();
+            item.scrollIntoView({ block: 'nearest' });
+        }
+    },
 
     showHistoryModal: function() {
         if (!currentChatId) return;
@@ -146,6 +150,7 @@
                 // 创建容器
                 const container = document.createElement('div');
                 container.className = `vc-history-item-container ${typeClass}`;
+                container.dataset.callRecordId = String(record.id);
 
                 // 内容包裹层
                 const contentWrapper = document.createElement('div');
@@ -211,13 +216,7 @@
                                         
                                         // 2. 更新聊天记录中的消息
                                         const chat = this.state.currentChat;
-                                        const summaryMsg = chat.history.find(m => m.callRecordId === record.id);
-                                        if (summaryMsg) {
-                                            const date = new Date(record.startTime);
-                                            const dateStr = `${date.getFullYear()}/${date.getMonth()+1}/${date.getDate()} ${date.getHours().toString().padStart(2,'0')}:${date.getMinutes().toString().padStart(2,'0')}`;
-                                            const durationStr = this.formatDuration(record.duration);
-                                            summaryMsg.content = `[视频通话记录：${dateStr}；${durationStr}；${summary}]`;
-                                        }
+                                        this.ensureCallSummaryMessages(chat);
                                         
                                         await saveData();
                                         
@@ -400,11 +399,9 @@
         if (index !== -1) {
             this.state.currentChat.callHistory.splice(index, 1);
             
-            // 2. 尝试删除对应的聊天消息
-            const msgIndex = this.state.currentChat.history.findIndex(m => m.callRecordId === recordId);
-            if (msgIndex !== -1) {
-                this.state.currentChat.history.splice(msgIndex, 1);
-            }
+            this.state.currentChat.history = this.state.currentChat.history.filter(
+                message => message.callRecordId !== recordId
+            );
 
             await saveData();
             

@@ -439,9 +439,20 @@ async function getAiReply(chatId, chatType, isBackground = false, isSummary = fa
 
     const chat = replyOptions.workingChat || ((chatType === 'private') ? db.characters.find(c => c.id === chatId) : db.groups.find(g => g.id === chatId));
     if (!chat) return;
+    if (window.VideoCallModule?.ensureCallSummaryMessages(chat)) {
+        if (chatType === 'group') await saveGroup(chatId);
+        else await saveCharacter(chatId);
+    }
     const backgroundReason = replyOptions.backgroundReason || 'inactivity';
     const backgroundSpeaker = replyOptions.member ? (replyOptions.member.groupNickname || replyOptions.member.realName) : chat.realName;
-    const backgroundInstruction = backgroundReason === 'followUp'
+    const backgroundInstruction = replyOptions.callFollowUp
+        ? [
+            `你刚刚连续拨打了 ${replyOptions.callFollowUp.attempts} 次${replyOptions.callFollowUp.callType === 'video' ? '视频' : '语音'}电话。每次都是等待30秒无人接听后，由你结束本次拨号；对方没有接听，也没有主动挂断或明确拒绝。`,
+            '这是刚发生的未接来电，不是要求你重新回复历史里最后一条用户消息。不要把未接听理解成对方挂断。',
+            '根据人物性格、关系和当前语境，自主决定是否发送普通消息。可以自然地关心为什么不接、没看到吗、在干嘛，但不要质问为什么挂电话。',
+            '不想发消息只输出 ignore；否则按正常聊天格式发送。不要再次发起通话，也不要复述历史里最后一条用户消息。'
+        ].join('\n')
+        : backgroundReason === 'followUp'
         ? `[系统通知：你刚刚已经回复过用户，但用户暂时还没有接话。请以${backgroundSpeaker}的身份，根据最近对话、人设、关系与当前时间，自然地追加一轮较简短的表达。可以补充刚想到的内容、延续上一话题、分享情绪或轻微追问；不要解释为何再次发送，不要提及系统、概率或等待规则，不要重复上一轮，也不要责怪或催促用户回复。]`
         : `[系统通知：距离上次互动已有一段时间。请以${backgroundSpeaker}的身份主动发起新话题，或自然地延续之前的对话。]`;
     const latestTurnProtectionEnabled = !isBackground && !isSummary && !!db.apiSettings?.latestTurnProtectionEnabled;
@@ -454,7 +465,7 @@ async function getAiReply(chatId, chatType, isBackground = false, isSummary = fa
         } catch (_) { /* diagnostics must not affect chat */ }
     };
     let replyTask = null;
-    const resilienceEnabled = !isSummary && window.ReplyResilience;
+    const resilienceEnabled = !isSummary && !replyOptions.callFollowUp && window.ReplyResilience;
     let requestAbortController = null;
     let replyIdleTimer = null;
     let replyTotalTimer = null;

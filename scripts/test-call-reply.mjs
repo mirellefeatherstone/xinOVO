@@ -201,4 +201,48 @@ assert.equal(module.state.isAiSpeaking, true);
 module.state.isGenerating = false;
 module.state.isAiSpeaking = false;
 
-console.log('Call reply tests passed: SSE, tail buffering, Gemini, content arrays, display fallback, avatar feedback, and stale-request isolation.');
+const incomingChat = { id: 'incoming-chat', name: '角色', history: [] };
+videoContext.db = { characters: [incomingChat], groups: [] };
+videoContext.saveData = async () => {};
+videoContext.renderMessages = () => {};
+videoContext.currentChatId = incomingChat.id;
+videoContext.setTimeout = (_, delay) => delay;
+videoContext.clearTimeout = () => {};
+videoContext.document.getElementById = () => ({ style: {}, classList: { add() {}, remove() {} }, offsetHeight: 0 });
+const followUps = [];
+videoContext.getAiReply = async (...args) => followUps.push(args);
+module.state.isCallActive = false;
+await module.receiveCall('voice', incomingChat.id, 3);
+const incomingSession = module.state.incomingSession;
+assert.equal(incomingChat.history.length, 1);
+assert.equal(incomingChat.history[0].isCallMessage, true);
+assert.equal(module.state.incomingTimeoutId, 30000);
+for (let attempt = 1; attempt <= 3; attempt++) {
+    await module.handleIncomingNoAnswer(incomingSession);
+    if (attempt < 3) await module.receiveCall('voice', incomingChat.id, 3, incomingSession);
+}
+assert.equal(incomingChat.history.length, 3);
+assert.ok(incomingChat.history.every(message => message.callStatus === 'cancelled' && message.callEndReason === 'no_answer'));
+assert.equal(followUps.length, 1);
+assert.equal(followUps[0][6].callFollowUp.attempts, 3);
+
+await module.receiveCall('video', incomingChat.id, 2);
+const rejectedMessage = incomingChat.history.at(-1);
+await module.rejectCall();
+assert.equal(rejectedMessage.callStatus, 'rejected');
+assert.equal(module.state.incomingSession, null);
+
+await module.receiveCall('voice', incomingChat.id, 2);
+const stoppedMessage = incomingChat.history.at(-1);
+incomingChat.history.push({ id: 'new-user-turn', role: 'user', content: '在吗' });
+module.stopIncomingRetriesForNewUserMessage();
+assert.equal(stoppedMessage.callEndReason, 'user_message');
+assert.equal(module.state.incomingSession, null);
+
+incomingChat.callHistory = [{ id: 'record-1', startTime: Date.now(), duration: 12, type: 'voice', summary: '聊了今天的安排' }];
+assert.equal(module.ensureCallSummaryMessages(incomingChat), true);
+const hiddenSummary = incomingChat.history.find(message => message.isCallSummary);
+assert.equal(hiddenSummary.hiddenFromDisplay, true);
+assert.equal(module.ensureCallSummaryMessages(incomingChat), false);
+
+console.log('Call reply tests passed: response parsing, structured retries, reject/cancel semantics, hidden summary, and unanswered follow-up.');

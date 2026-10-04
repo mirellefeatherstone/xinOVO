@@ -1,3 +1,5 @@
+@import url('modules/contacts-index.css');
+
 /* --- 聊天相关样式 --- */
 
 :root {
@@ -3018,6 +3020,56 @@
 .bubble-content > *:last-child,
 .voice-transcript > *:last-child {
     margin-bottom: 0;
+}
+
+#sticker-grid-container.wechat-emoji-mode {
+    display: grid;
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+    gap: 2px 0;
+    padding: 8px 6px 14px;
+    align-content: start;
+}
+
+.wechat-emoji-item {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 44px;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.wechat-emoji-item img {
+    display: block;
+    width: 35px;
+    height: 35px;
+    object-fit: contain;
+    pointer-events: none;
+}
+
+.wechat-emoji-item:active img {
+    transform: scale(0.9);
+}
+
+.wechat-inline-emoji {
+    display: inline-block;
+    width: 1.35em;
+    height: 1.35em;
+    object-fit: contain;
+    vertical-align: -0.28em;
+    margin-left: 0.03em;
+    user-select: none;
+    pointer-events: none;
+}
+
+#message-area img[src*="assets/wechat-game/dice-"] {
+    transform: scale(1.28) !important;
+    transform-origin: center;
+}
+
+#message-area img.wechat-game-image[src*="dice_Action_"] {
+    transform: scale(1) !important;
 }
 .bilingual-content { display: inline; }
 .bilingual-reveal { display: inline-block; margin: 0 0 0 5px; padding: 0; border: 0; background: transparent; color: #888; font-size: min(.82em, 12px); line-height: inherit; cursor: pointer; vertical-align: baseline; }

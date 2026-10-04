@@ -40,6 +40,19 @@ function createMessageBubbleElement(message, isContinuous = false) {
     if ((isStatusUpdate || isThinking || message.isTransferAction) && !debugVisible) return null;
     // 拦截：hiddenFromDisplay 标记的消息（如角色自知上下文消息），不渲染成气泡
     if (message.hiddenFromDisplay && !debugVisible) return null;
+    if (message.isCallMessage) {
+        const type = message.callType === 'video' ? '视频' : '语音';
+        const duration = Math.max(0, Number(message.callDuration) || 0);
+        const durationText = `${String(Math.floor(duration / 60)).padStart(2, '0')}:${String(duration % 60).padStart(2, '0')}`;
+        const labels = {
+            calling: `${type}通话中`,
+            rejected: `${type}通话已拒绝`,
+            cancelled: message.callDirection === 'incoming' && message.callEndReason !== 'user_message'
+                ? `${type}通话未接听` : `${type}通话已取消`,
+            ended: `${type}通话时长 ${durationText}`
+        };
+        content = `[通话的消息：${labels[message.callStatus] || type + '通话'}]`;
+    }
 
     if (message.type === 'poke' && window.PokeSystem) {
         return window.PokeSystem.renderMessage(message, chat);
@@ -333,7 +346,8 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
             bubbleElement.prepend(quoteDiv);
         }
         // ---------------------------------------------------
-        
+
+        window.WeChatEmoji?.renderInElement(bubbleElement);
         return wrapper;
     }
 
@@ -536,6 +550,13 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
     }
     const timeString = formatTimestampByFormat(timestamp, chat);
     wrapper.className = `message-wrapper ${isSent ? 'sent' : 'received'}`;
+    if (message.isCallSummary) wrapper.classList.add('call-summary-debug');
+    if (message.isCallMessage) {
+        wrapper.classList.add('call-message', `call-${message.callStatus || 'calling'}`);
+        wrapper.classList.add(message.callDirection === 'outgoing' ? 'call-outgoing' : 'call-incoming');
+        wrapper.classList.add(message.callType === 'video' ? 'call-video' : 'call-voice');
+        wrapper.style.setProperty('--call-duration', String(Math.max(0, Number(message.callDuration) || 0)));
+    }
     if (message.isContextDisabled) wrapper.classList.add('context-disabled');
     if (currentChatType === 'group' && !isSent) {
         wrapper.classList.add('group-message');
@@ -878,24 +899,27 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
         bubbleElement = document.createElement('div');
         bubbleElement.className = 'image-bubble sticker-bubble';
         let stickerSrc = '';
-        
-        // 新消息保存发送时选定的图片；旧消息仍按名称查找以兼容历史记录。
-        if (stickerData) {
+        const stickerName = isSent ? sentStickerMatch[1].trim() : receivedStickerMatch[1].trim();
+        const gameSticker = window.WeChatGame?.getResolvedSticker(stickerName);
+
+        if (gameSticker) {
+            stickerSrc = gameSticker.data;
+            bubbleElement.dataset.wechatGameName = gameSticker.name;
+            bubbleElement.dataset.wechatGameTimestamp = String(timestamp || 0);
+        } else if (stickerData) {
             stickerSrc = stickerData;
         } else {
-            const stickerName = isSent ? sentStickerMatch[1].trim() : receivedStickerMatch[1].trim();
-            
             const groups = (chat.stickerGroups || '').split(/[,，]/).map(s => s.trim()).filter(Boolean);
-            
+
             let targetSticker = null;
             if (groups.length > 0) {
                 targetSticker = db.myStickers.find(s => groups.includes(s.group) && s.name === stickerName);
             }
-            
+
             if (!targetSticker) {
                 targetSticker = db.myStickers.find(s => s.name === stickerName);
             }
-            
+
             if (targetSticker) {
                 stickerSrc = targetSticker.data;
             } else {
@@ -1349,6 +1373,12 @@ const contentMatch = content.match(/^\[.*?(?:消息|回复)[：:]([\s\S]+)\]$/);
         }
     }
     wrapper.prepend(bubbleRow);
+    window.WeChatEmoji?.renderInElement(bubbleRow);
+    if (message.isCallMessage && message.callRecordId) {
+        bubbleRow.querySelector('.message-bubble')?.addEventListener('click', () => {
+            window.VideoCallModule?.showDetailModal(message.callRecordId);
+        });
+    }
 
     // 首条开场白且有多条可切换时，包一层并显示左右箭头
     const isFirstGreeting = currentChatType === 'private' &&

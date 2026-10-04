@@ -1,0 +1,80 @@
+name: Sync upstream and publish live update
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: xinovo-live-update
+  cancel-in-progress: false
+
+jobs:
+  sync-and-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Merge author updates
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          echo "UPSTREAM_BASE=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+          git remote add upstream https://github.com/wq70/xinOVO.git
+          git fetch upstream main
+          git merge --no-edit upstream/main
+
+      - name: Require review for storage changes
+        run: |
+          if git diff --name-only "$UPSTREAM_BASE"..HEAD -- js/data/indexed-db.js | grep -q .; then
+            echo "Upstream changed IndexedDB schema or persistence code; review and merge it manually before publishing."
+            exit 1
+          fi
+
+      - name: Install and verify
+        run: |
+          npm ci
+          npm run build
+          npm run test:live-update
+          npm run check
+          git diff --check
+
+      - name: Save generated sources
+        run: |
+          git add index.html js/generated js/modules/video_call.js js/modules/avatar_recognition.js js/modules/memory_table.js js/settings/chat-settings.js sw-assets.js
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: rebuild generated application files"
+          fi
+
+      - name: Build live update bundle
+        run: npm run ota:bundle
+
+      - name: Push verified upstream merge
+        run: git push origin HEAD:main
+
+      - name: Publish live update release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bundle_id=$(node -p "JSON.parse(require('fs').readFileSync('updates/release-metadata.json')).bundleId")
+          checksum=$(node -p "JSON.parse(require('fs').readFileSync('updates/release-metadata.json')).checksum")
+          if gh release view "$bundle_id" >/dev/null 2>&1; then
+            exit 0
+          fi
+          gh release create "$bundle_id" updates/xinovo-live-update.zip \
+            --target "$(git rev-parse HEAD)" \
+            --title "UwU live update ${bundle_id#live-}" \
+            --notes "bundle-sha256: $checksum" \
+            --latest

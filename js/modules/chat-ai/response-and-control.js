@@ -191,6 +191,13 @@ function extractThinkingBlocks(response) {
 }
 
 async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChatType, isBackground = false, isCharBlockedMonologue = false, replyOptions = {}) {
+    if (replyOptions.callFollowUp) {
+        const lastUserMessageId = [...(chat.history || [])].reverse()
+            .find(message => message.role === 'user' && !message.isCallMessage)?.id;
+        if (lastUserMessageId !== replyOptions.callFollowUp.lastUserMessageId) return;
+        const decision = String(fullResponse || '').replace(/<thinking>[\s\S]*?<\/thinking>/gi, '').trim();
+        if (decision.toLowerCase() === 'ignore') return;
+    }
     const forcedMember = targetChatType === 'group' && replyOptions.memberId ? chat.members.find(member => member.id === replyOptions.memberId) : null;
     if (replyOptions.memberId && !forcedMember) throw new Error('发言成员已不存在');
     if (replyOptions.shouldStop?.()) return;
@@ -210,6 +217,9 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
         }
         // 1. 移除 [incipere] 标签
         fullResponse = fullResponse.replace(/\[incipere\]/g, "");
+        const callRetryMatch = fullResponse.match(/<call_retry>\s*([1-5])\s*<\/call_retry>/i);
+        const callMaxAttempts = callRetryMatch ? Number(callRetryMatch[1]) : 3;
+        fullResponse = fullResponse.replace(/<call_retry>[\s\S]*?<\/call_retry>/gi, '').trim();
 
         // 1.4 角色掌控模式：解析并执行 [phone-control:...] 指令，并从展示内容中移除
         if (targetChatType === 'private') {
@@ -387,35 +397,34 @@ async function handleAiReplyContent(fullResponse, chat, targetChatId, targetChat
                     // 群聊保留原有的全库兜底。
                     if (!targetSticker) targetSticker = db.myStickers.find(s => s.name === stickerName);
                 }
+
+                if (!targetSticker && window.WeChatGame) {
+                    const resolvedName = window.WeChatGame.resolveAiStickerName(stickerName);
+                    if (resolvedName) {
+                        item.content = item.content.replace(stickerMatch[1], resolvedName);
+                        stickerName = resolvedName;
+                        targetSticker = window.WeChatGame.getResolvedSticker(resolvedName);
+                    }
+                }
                 
                 // 3. 如果完全找不到，则剔除该消息
                 if (!targetSticker) {
                     console.log(`[Auto-Filter] 剔除不存在的表情包: ${stickerName}`);
                     continue; 
                 }
-                if (targetChatType === 'private') item.stickerData = targetSticker.data;
+                if (targetChatType === 'private' && !targetSticker.__wechatGame) item.stickerData = targetSticker.data;
             }
 
             // --- 视频/语音通话邀请检测 ---
             const callInviteRegex = /\[(.*?)向(.*?)发起了(视频|语音)通话\]/;
             const callInviteMatch = item.content.match(callInviteRegex);
             if (callInviteMatch) {
+                if (replyOptions.callFollowUp) continue;
                 const type = callInviteMatch[3] === '视频' ? 'video' : 'voice';
-                // 触发来电界面
                 if (window.VideoCallModule && typeof window.VideoCallModule.receiveCall === 'function') {
-                    window.VideoCallModule.receiveCall(type);
+                    window.VideoCallModule.receiveCall(type, targetChatId, callMaxAttempts);
                 }
-                // 不将此消息显示为普通气泡，或者显示为系统通知
-                // 这里选择显示为系统通知样式的消息
-                const message = {
-                    id: `msg_${Date.now()}_${Math.random()}`,
-                    role: 'system', // 使用 system 角色
-                    content: item.content.trim(),
-                    timestamp: Date.now()
-                };
-                chat.history.push(message);
-                addMessageBubble(message, targetChatId, targetChatType);
-                continue; // 跳过后续处理
+                continue;
             }
 
             if (targetChatType === 'private') {

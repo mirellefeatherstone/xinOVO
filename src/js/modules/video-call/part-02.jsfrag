@@ -1,15 +1,3 @@
-            };
-            chat.history.push(msg);
-            await saveData();
-            
-            if (typeof renderMessages === 'function' && typeof currentChatId !== 'undefined' && currentChatId === chat.id) {
-                renderMessages(false, true);
-            }
-        }
-        
-        this.state.incomingChat = null;
-    },
-
     startCall: async function(type, isIncoming = false, chatObject = null) {
         this.hideCallTypeModal();
         this.state.replyRequestId += 1;
@@ -43,20 +31,8 @@
         this.state.currentChat = chat;
 
         if (!isIncoming) {
-            const myName = chat.myName || (chat.me ? chat.me.nickname : '我');
-            const targetName = chat.realName || chat.name; 
-            const typeText = type === 'video' ? '视频' : '语音';
-            const inviteMsg = {
-                id: `msg_${Date.now()}_${Math.random()}`,
-                role: 'user', 
-                content: `[${myName}向${targetName}发起了${typeText}通话]`,
-                timestamp: Date.now()
-            };
-            chat.history.push(inviteMsg);
-            await saveData();
-            if (typeof renderMessages === 'function') {
-                renderMessages(false, true);
-            }
+            const message = await this.createCallMessage(chat, 'outgoing', type);
+            this.state.callMessageId = message.id;
         }
 
         const charAvatarUrl = chat.avatar || 'https://i.postimg.cc/1zsGZ85M/Camera_1040g3k831o3b7f1bkq105oaltnigkev8gp3kia8.jpg';
@@ -793,6 +769,7 @@
     },
 
     endCall: async function(isLoading = false) {
+        const wasConnected = this.state.hasEnteredCallScene && !isLoading;
         this._clearInterruptData();
         this.state.replyRequestId += 1;
         if (this.state.replyAbortController) {

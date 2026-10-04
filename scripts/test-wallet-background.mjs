@@ -9,7 +9,7 @@ const chatFeaturesSource = fs.readFileSync(new URL('../js/modules/chat_features.
 assert.match(mainSource, /lastSuccessTime/);
 assert.match(mainSource, /retryAt/);
 assert.match(mainSource, /visibilitychange[\s\S]*checkAutoReply/);
-assert.match(requestSource, /const resilienceEnabled = !isSummary && window\.ReplyResilience/);
+assert.match(requestSource, /const resilienceEnabled = !isSummary && !replyOptions\.callFollowUp && window\.ReplyResilience/);
 assert.doesNotMatch(shopSource, /getAiReply\([^\n]*true/, '用户商城消费不应触发后台 AI 回复');
 assert.doesNotMatch(chatFeaturesSource, /getAiReply\([^\n]*true/, '用户转账消费不应触发后台 AI 回复');
 

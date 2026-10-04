@@ -1,0 +1,11 @@
+{
+  "appId": "com.mirelle.xinuwu",
+  "appName": "UwU",
+  "webDir": "www",
+  "plugins": {
+    "LiveUpdate": {
+      "readyTimeout": 0,
+      "autoDeleteBundles": true
+    }
+  }
+}

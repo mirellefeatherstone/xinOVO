@@ -42,6 +42,7 @@ function parseStickerText(text) {
 }
 
 async function setupStickerSystem() {
+    await window.WeChatEmoji?.load();
     const stickerMenuBtn = document.getElementById('sticker-menu-btn');
     const stickerMenuActionSheet = document.getElementById('sticker-menu-actionsheet');
     const stickerCategoryBar = document.getElementById('sticker-category-bar');
@@ -911,6 +912,7 @@ function renderStickerCategories() {
     }
     const groups = [...activeGroups];
     
+    createCategoryItem(bar, { id: 'wechat', name: '微信' });
     // 1. 最近使用
     createCategoryItem(bar, { id: 'recent', name: '最近使用' });
 
@@ -1040,6 +1042,22 @@ function createCategoryItem(container, cat) {
 function renderStickerGrid(searchQuery = '') {
     const container = document.getElementById('sticker-grid-container');
     container.innerHTML = '';
+
+    container.classList.toggle('wechat-emoji-mode', currentStickerCategory === 'wechat');
+    if (currentStickerCategory === 'wechat') {
+        for (const emoji of window.WeChatEmoji?.emojiList || []) {
+            const item = document.createElement('div');
+            item.className = 'wechat-emoji-item';
+            item.title = emoji.name;
+            const image = document.createElement('img');
+            image.src = emoji.src;
+            image.alt = emoji.token;
+            item.appendChild(image);
+            item.addEventListener('click', () => window.WeChatEmoji.insertToken(emoji.token));
+            container.appendChild(item);
+        }
+        return;
+    }
 
     let stickersToShow = [];
 

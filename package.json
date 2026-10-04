@@ -3,11 +3,18 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/apply-capacitor-keyboard-patch.mjs",
     "test:pomodoro": "node scripts/test-pomodoro.mjs",
     "test:status-storage": "node scripts/test-status-storage.mjs",
     "test:tokens": "node scripts/test-token-accounting.mjs && node scripts/test-token-storage.mjs",
     "build": "node scripts/build.mjs",
-    "check": "node scripts/verify.mjs && node scripts/test-bilingual.mjs && node scripts/test-moments-batch.mjs && node scripts/test-moments-comment-edit.mjs && node scripts/test-moments-controls.mjs && node scripts/test-poke.mjs && node scripts/test-follow-up-reply.mjs && node scripts/test-prompt-studio.mjs && node scripts/test-vector-memory.mjs && node scripts/test-call-reply.mjs && node scripts/test-chat-provider-adapters.mjs && node scripts/test-api-generation-params.mjs && node scripts/test-avatar-system.mjs && node scripts/test-forum-system.mjs && node scripts/test-reply-resilience.mjs && node scripts/test-wallet-background.mjs && node scripts/test-keep-alive.mjs && node scripts/test-service-worker.mjs && node scripts/test-novelai-vibe.mjs && node scripts/test-style-rescue.mjs && node scripts/test-role-api.mjs",
+    "ios:web": "npm run build && node scripts/prepare-capacitor-web.mjs",
+    "ios:sync": "npm run ios:web && npm run apply:keyboard-patch && npx cap sync ios",
+    "apply:keyboard-patch": "node scripts/apply-capacitor-keyboard-patch.mjs",
+    "ota:bundle": "npm run ios:web && node scripts/build-live-update.mjs",
+    "test:live-update": "node scripts/test-live-update.mjs",
+    "test:custom-patches": "node scripts/test-custom-patches.mjs",
+    "check": "node scripts/verify.mjs && node scripts/test-bilingual.mjs && node scripts/test-moments-batch.mjs && node scripts/test-moments-comment-edit.mjs && node scripts/test-moments-controls.mjs && node scripts/test-poke.mjs && node scripts/test-follow-up-reply.mjs && node scripts/test-prompt-studio.mjs && node scripts/test-vector-memory.mjs && node scripts/test-call-reply.mjs && node scripts/test-custom-patches.mjs && node scripts/test-chat-provider-adapters.mjs && node scripts/test-api-generation-params.mjs && node scripts/test-avatar-system.mjs && node scripts/test-forum-system.mjs && node scripts/test-reply-resilience.mjs && node scripts/test-wallet-background.mjs && node scripts/test-keep-alive.mjs && node scripts/test-service-worker.mjs && node scripts/test-novelai-vibe.mjs && node scripts/test-style-rescue.mjs && node scripts/test-role-api.mjs",
     "test:moments": "node scripts/test-moments.mjs && node scripts/test-moments-batch.mjs && node scripts/test-moments-comment-edit.mjs && node scripts/test-moments-controls.mjs",
     "test:prompt": "node scripts/test-prompt-studio.mjs",
     "test:follow-up": "node scripts/test-follow-up-reply.mjs",
@@ -27,5 +34,14 @@
   },
   "devDependencies": {
     "parse5": "8.0.1"
+  },
+  "dependencies": {
+    "@capacitor/cli": "8.5.0",
+    "@capacitor/core": "8.5.0",
+    "@capacitor/filesystem": "8.1.2",
+    "@capacitor/ios": "8.5.0",
+    "@capacitor/keyboard": "8.0.5",
+    "@capacitor/share": "8.0.1",
+    "@capawesome/capacitor-live-update": "8.4.4"
   }
 }

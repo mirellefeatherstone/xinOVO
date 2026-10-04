@@ -253,6 +253,7 @@ const performFullSave = async () => {
 };
 
 const saveData = async () => {
+    window.VideoCallModule?.stopIncomingRetriesForNewUserMessage?.();
     if (saveDataPromise) {
         saveDataRequestedWhileRunning = true;
         return saveDataPromise;
@@ -282,6 +283,8 @@ const characterSaveQueues = new Map();
 const groupSaveQueues = new Map();
 
 const saveSingleChatRecord = async (table, collection, id, queueMap, label) => {
+    // Persistence is the common boundary shared by text, sticker, media, and special user messages.
+    window.VideoCallModule?.stopIncomingRetriesForNewUserMessage?.();
     const existing = queueMap.get(id);
     if (existing) {
         existing.requested = true;

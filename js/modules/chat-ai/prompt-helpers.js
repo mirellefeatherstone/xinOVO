@@ -254,6 +254,13 @@ f) 给我的转账: [${character.realName}的转账：{金额}元；备注：{�
         outputFormats += `\ng) 表情包: [${character.realName}的表情包：{表情包名称}]（名称必须与可用表情包列表完全一致）`;
     }
 
+    if (window.WeChatGame) {
+        outputFormats += `\n微信小游戏表情: [${character.realName}发送的表情包：骰子] 或 [${character.realName}发送的表情包：猜拳]。只能决定是否发送，不能指定点数或手势；结果由客户端随机。`;
+    }
+
+    const weChatEmojiPrompt = window.WeChatEmoji?.getAiPrompt?.();
+    if (weChatEmojiPrompt) outputFormats += `\n${weChatEmojiPrompt}`;
+
     outputFormats += `
 h) 对我礼物的回应(此条不显示): [${character.realName}已接收礼物]
 i) 对我转账的回应(此条不显示): [${character.realName}接收${character.myName}的转账] 或 [${character.realName}退回${character.myName}的转账]
@@ -272,7 +279,8 @@ s) 发送我的位置: [${character.realName}的位置：{地点}；距你约 {�
     if (character.videoCallEnabled) {
         outputFormats += `
 q) 发起视频通话: [${character.realName}向${character.myName}发起了视频通话]
-r) 发起语音通话: [${character.realName}向${character.myName}发起了语音通话]`;
+r) 发起语音通话: [${character.realName}向${character.myName}发起了语音通话]
+主动发起通话时，可附上 <call_retry>1-5</call_retry> 决定本轮最多拨打几次；仅在无人接听时重拨。请依人格与语境选择，不必固定次数。`;
     }
 
     if (character.shopInteractionEnabled) {
