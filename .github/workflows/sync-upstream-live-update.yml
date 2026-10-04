@@ -18,11 +18,11 @@ jobs:
   sync-and-publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: 22
           cache: npm
@@ -64,17 +64,22 @@ jobs:
       - name: Push verified upstream merge
         run: git push origin HEAD:main
 
-      - name: Publish live update release
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Read live update metadata
+        id: live-update
         run: |
           bundle_id=$(node -p "JSON.parse(require('fs').readFileSync('updates/release-metadata.json')).bundleId")
           checksum=$(node -p "JSON.parse(require('fs').readFileSync('updates/release-metadata.json')).checksum")
-          if gh release view "$bundle_id" >/dev/null 2>&1; then
-            exit 0
-          fi
-          gh release create "$bundle_id" updates/xinovo-live-update.zip \
-            --target "$(git rev-parse HEAD)" \
-            --title "UwU live update ${bundle_id#live-}" \
-            --notes "bundle-sha256: $checksum" \
-            --latest
+          echo "bundle_id=$bundle_id" >> "$GITHUB_OUTPUT"
+          echo "checksum=$checksum" >> "$GITHUB_OUTPUT"
+          echo "target=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish live update release
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ steps.live-update.outputs.bundle_id }}
+          target_commitish: ${{ steps.live-update.outputs.target }}
+          name: UwU live update ${{ steps.live-update.outputs.bundle_id }}
+          body: 'bundle-sha256: ${{ steps.live-update.outputs.checksum }}'
+          files: updates/xinovo-live-update.zip
+          fail_on_unmatched_files: true
+          make_latest: true
