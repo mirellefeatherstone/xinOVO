@@ -428,10 +428,20 @@ const loadData = async () => {
     db.myStickers = myStickers;
     db.archives = archives || [];
 
-    const settings = settingsArray.reduce((acc, { key, value }) => {
+    let settings = settingsArray.reduce((acc, { key, value }) => {
         acc[key] = value;
         return acc;
     }, {});
+
+    const groupedSettings = window.UwUBackupCompat?.unwrapGroupedSettings(settings);
+    if (groupedSettings?.groups.length) {
+        const records = groupedSettings.restoredKeys.map(key => ({ key, value: groupedSettings.data[key] }));
+        await dexieDB.transaction('rw', dexieDB.globalSettings, async () => {
+            if (records.length) await dexieDB.globalSettings.bulkPut(records);
+            await dexieDB.globalSettings.bulkDelete(groupedSettings.groups);
+        });
+        settings = groupedSettings.data;
+    }
 
     db.worldBookCategoryOrder = settings.worldBookCategoryOrder || null;
 

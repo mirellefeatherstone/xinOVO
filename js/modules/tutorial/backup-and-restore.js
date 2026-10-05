@@ -636,7 +636,8 @@ async function stageBackupObject(data, isPartial) {
     await clearImportStaging();
     const tableKeys = new Set(['characters', 'groups', 'worldBooks', 'myStickers', 'archives', 'naiVibeAssets', 'naiVibeEncodings', 'naiVibeGroups']);
     try {
-        for (const [key, value] of Object.entries(data)) {
+        const normalizedData = window.UwUBackupCompat?.unwrapGroupedSettings(data).data || data;
+        for (const [key, value] of Object.entries(normalizedData)) {
             if (key.startsWith('_export') || key === '__chunks__' || value === undefined) continue;
             if (tableKeys.has(key)) {
                 if (!Array.isArray(value)) continue;
