@@ -9,6 +9,7 @@ const archive = resolve(output, 'xinovo-live-update.zip');
 const requiredFiles = [
     'index.html',
     'js/modules/live-update.js',
+    'js/data/legacy-backup-stream.js',
     'js/modules/contacts-index.js',
     'js/modules/phone-keypad.js',
     'js/modules/wechat_emoji.js',

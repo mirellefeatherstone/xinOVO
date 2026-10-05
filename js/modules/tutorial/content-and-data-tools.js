@@ -909,18 +909,10 @@ function renderTutorialContent() {
             try {
                 showToast('正在导入数据，请稍候...');
                 const archiveInfo = await inspectBackupArchive(file);
-                let importResult;
-                if (archiveInfo.stream) {
-                    importResult = await importStreamBackupData(file, {
-                        onProgress: message => showToast(message)
-                    });
-                } else {
-                    const decompressionStream = new DecompressionStream('gzip');
-                    const decompressedStream = file.stream().pipeThrough(decompressionStream);
-                    const jsonString = await new Response(decompressedStream).text();
-                    const data = JSON.parse(jsonString);
-                    importResult = await importBackupData(data);
-                }
+                const importResult = await importBackupFile(file, {
+                    archiveInfo,
+                    onProgress: message => showToast(message)
+                });
 
                 if (importResult.success) {
                     showToast(`数据导入成功！${importResult.message} 应用即将刷新。`);
@@ -1120,17 +1112,8 @@ function renderTutorialContent() {
             if (loadingBtn) return;
             try {
                 const archiveInfo = await inspectBackupArchive(file);
-                let legacyData = null;
-                const exportTables = archiveInfo.stream
-                    ? archiveInfo.header.exportTables
-                    : await (async () => {
-                        const decompressionStream = new DecompressionStream('gzip');
-                        const decompressedStream = file.stream().pipeThrough(decompressionStream);
-                        const jsonString = await new Response(decompressedStream).text();
-                        legacyData = JSON.parse(jsonString);
-                        return legacyData._exportTables;
-                    })();
-                if (!exportTables || !Array.isArray(exportTables)) {
+                const exportTables = archiveInfo.stream ? archiveInfo.header.exportTables : null;
+                if (archiveInfo.stream && (!exportTables || !Array.isArray(exportTables))) {
                     showToast('请选择由「分类导出」生成的文件（.ee）');
                     event.target.value = null;
                     return;
@@ -1141,12 +1124,11 @@ function renderTutorialContent() {
                     return;
                 }
                 showToast('正在分类导入...');
-                const result = archiveInfo.stream
-                    ? await importStreamBackupData(file, {
-                        requirePartial: true,
-                        onProgress: message => showToast(message)
-                    })
-                    : await importPartialBackupData(legacyData);
+                const result = await importBackupFile(file, {
+                    archiveInfo,
+                    requirePartial: true,
+                    onProgress: message => showToast(message)
+                });
                 if (result.success) {
                     showToast(result.message + ' 应用即将刷新。');
                     setTimeout(() => window.location.reload(), 1500);

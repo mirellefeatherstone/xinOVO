@@ -348,8 +348,8 @@ async function createCompressedBackupBlob(options = {}) {
     }
 }
 
-async function* readGzipBackupLines(file) {
-    const stream = file.stream().pipeThrough(new DecompressionStream('gzip'));
+async function* readBackupLines(file) {
+    const stream = await window.UwULegacyBackupStream.openTextStream(file);
     const reader = stream.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
@@ -370,7 +370,7 @@ async function* readGzipBackupLines(file) {
 
 async function inspectBackupArchive(file) {
     try {
-        const stream = file.stream().pipeThrough(new DecompressionStream('gzip'));
+        const stream = await window.UwULegacyBackupStream.openTextStream(file);
         const reader = stream.getReader();
         const decoder = new TextDecoder();
         let prefix = '';
@@ -402,7 +402,7 @@ async function validateStreamBackup(file, onProgress) {
     let footer = null;
     let parsedRecordCount = 0;
     let uncompressedBytes = 0;
-    for await (const line of readGzipBackupLines(file)) {
+    for await (const line of readBackupLines(file)) {
         uncompressedBytes += line.length * 2 + 2;
         const record = JSON.parse(line);
         if (!header) {
@@ -542,7 +542,7 @@ async function importStreamBackupData(file, options = {}) {
             buffer.length = 0;
         };
 
-        for await (const line of readGzipBackupLines(file)) {
+        for await (const line of readBackupLines(file)) {
             const record = JSON.parse(line);
             if (record.type === 'header' || record.type === 'footer') continue;
 
@@ -628,9 +628,136 @@ async function importStreamBackupData(file, options = {}) {
     }
 }
 
+async function importLegacyStreamBackupData(file, options = {}) {
+    const startTime = Date.now();
+    const tableKeys = new Set(['characters', 'groups', 'worldBooks', 'myStickers', 'archives', 'naiVibeAssets', 'naiVibeEncodings', 'naiVibeGroups']);
+    const groupedKeys = new Set(['globalSettings', 'theaterData', '__chunks__']);
+    const metadata = {};
+    const tableBuffers = new Map();
+    const chunkKeys = [];
+    const chunkPrefix = '__legacy_backup_chunk__:';
+    let importedRecords = 0;
+
+    const reportProgress = async () => {
+        importedRecords++;
+        if (importedRecords % 50 !== 0) return;
+        if (typeof options.onProgress === 'function') options.onProgress(`正在写入... ${importedRecords} 条`);
+        await yieldBackupTask();
+    };
+    const flushTableBuffer = async key => {
+        const buffer = tableBuffers.get(key);
+        if (!buffer?.length) return;
+        const table = getDexieTableForBackupKey(key, true);
+        if (!table) throw new Error(`找不到数据表: ${key}`);
+        await table.bulkPut(buffer);
+        buffer.length = 0;
+    };
+    const stageTableItem = async (key, value) => {
+        const table = getDexieTableForBackupKey(key, true);
+        if (!table) throw new Error(`找不到数据表: ${key}`);
+        if (key === 'characters' || key === 'groups') {
+            if (!value.theme) value.theme = 'white_pink';
+            await table.put(value);
+        } else {
+            if (!tableBuffers.has(key)) tableBuffers.set(key, []);
+            const buffer = tableBuffers.get(key);
+            buffer.push(value);
+            if (buffer.length >= 50) await flushTableBuffer(key);
+        }
+        await reportProgress();
+    };
+    const resolveChunkedHistories = async table => {
+        if (!table) return;
+        await table.toCollection().each(async chat => {
+            if (!Array.isArray(chat.history) || typeof chat.history[0] !== 'string') return;
+            const history = [];
+            for (const chunkKey of chat.history) {
+                const record = await dexieDB.importGlobalSettings.get(chunkPrefix + chunkKey);
+                if (!record || typeof record.value !== 'string') continue;
+                const chunk = JSON.parse(record.value);
+                if (Array.isArray(chunk)) history.push(...chunk);
+            }
+            chat.history = history;
+            if (!chat.theme) chat.theme = 'white_pink';
+            await table.put(chat);
+        });
+    };
+
+    try {
+        if (typeof options.onProgress === 'function') options.onProgress('正在流式读取旧版备份...');
+        await clearImportStaging();
+        await window.UwULegacyBackupStream.parse(file, {
+            streamArrays: tableKeys,
+            streamObjects: groupedKeys,
+            onValue: async (key, value) => {
+                if (key.startsWith('_export')) metadata[key] = value;
+                else if (tableKeys.has(key)) throw new Error(`备份字段 ${key} 必须是数组`);
+                else await dexieDB.importGlobalSettings.put({ key, value });
+                await reportProgress();
+            },
+            onArrayItem: stageTableItem,
+            onArrayEnd: flushTableBuffer,
+            onObjectEntry: async (groupKey, key, value) => {
+                if (groupKey === '__chunks__') {
+                    const stagingKey = chunkPrefix + key;
+                    chunkKeys.push(stagingKey);
+                    await dexieDB.importGlobalSettings.put({ key: stagingKey, value });
+                } else {
+                    await dexieDB.importGlobalSettings.put({ key, value });
+                }
+                await reportProgress();
+            }
+        });
+        for (const key of tableBuffers.keys()) await flushTableBuffer(key);
+
+        const isPartial = Array.isArray(metadata._exportTables)
+            || String(metadata._exportVersion || '').endsWith('_partial');
+        if (options.requirePartial && !isPartial) throw new Error('请选择由「分类导出」生成的文件（.ee）');
+        if (!options.requirePartial && isPartial) throw new Error('这是分类导出文件，请使用「分类导入」');
+
+        if (metadata._exportVersion !== '3.0' && chunkKeys.length) {
+            await resolveChunkedHistories(dexieDB.importCharacters);
+            await resolveChunkedHistories(dexieDB.importGroups);
+        }
+        if (chunkKeys.length) await dexieDB.importGlobalSettings.bulkDelete(chunkKeys);
+
+        if (!isPartial) {
+            db.characters = [];
+            db.groups = [];
+            db.worldBooks = [];
+            db.myStickers = [];
+            db.archives = [];
+        }
+        if (typeof options.onProgress === 'function') options.onProgress('正在提交已校验的数据...');
+        await commitImportStaging(isPartial);
+        return {
+            success: true,
+            message: `${isPartial ? '分类导入' : '导入'}完成 (耗时${Date.now() - startTime}ms)`
+        };
+    } catch (error) {
+        console.error('旧版备份流式导入失败:', error);
+        try {
+            await clearImportStaging();
+            if (!options.requirePartial && typeof loadData === 'function') await loadData();
+        } catch (restoreError) {
+            console.error('恢复当前数据视图失败:', restoreError);
+        }
+        return { success: false, error: error.message, duration: Date.now() - startTime };
+    }
+}
+
+async function importBackupFile(file, options = {}) {
+    const archiveInfo = options.archiveInfo || await inspectBackupArchive(file);
+    return archiveInfo.stream
+        ? importStreamBackupData(file, options)
+        : importLegacyStreamBackupData(file, options);
+}
+
 window.createCompressedBackupBlob = createCompressedBackupBlob;
 window.inspectBackupArchive = inspectBackupArchive;
 window.importStreamBackupData = importStreamBackupData;
+window.importLegacyStreamBackupData = importLegacyStreamBackupData;
+window.importBackupFile = importBackupFile;
 
 async function stageBackupObject(data, isPartial) {
     await clearImportStaging();

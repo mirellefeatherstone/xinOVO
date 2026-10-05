@@ -474,17 +474,10 @@ const GitHubMgr = {
 
             showToast('解压完成，开始导入...');
             const archiveInfo = await inspectBackupArchive(archiveBlob);
-            let importResult;
-            if (archiveInfo.stream) {
-                importResult = await importStreamBackupData(archiveBlob, {
-                    onProgress: message => showToast(message)
-                });
-            } else {
-                const decompressionStream = new DecompressionStream('gzip');
-                const decompressedStream = archiveBlob.stream().pipeThrough(decompressionStream);
-                const jsonString = await new Response(decompressedStream).text();
-                importResult = await importBackupData(JSON.parse(jsonString));
-            }
+            const importResult = await importBackupFile(archiveBlob, {
+                archiveInfo,
+                onProgress: message => showToast(message)
+            });
 
             if (importResult.success) {
                 showToast(`恢复成功！${importResult.message} 应用即将刷新。`);
